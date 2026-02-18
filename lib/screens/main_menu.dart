@@ -66,7 +66,9 @@ class _MainMenuState extends State<MainMenu> {
     final messenger = ScaffoldMessenger.of(context);
 
     await SyncService().syncEverything((message) {
-      messenger.showSnackBar(SnackBar(content: Text(message), duration: const Duration(milliseconds: 700)));
+      messenger.showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(milliseconds: 700)),
+      );
     });
 
     await loadBanksJson();
@@ -197,10 +199,11 @@ class _MainMenuState extends State<MainMenu> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredData = Map<String, dynamic>.from(menuData);
-    if (searchQuery.isNotEmpty) {
-      filteredData.removeWhere((key, value) => !key.toLowerCase().contains(searchQuery.toLowerCase()));
-    }
+    final filteredData = Map<String, dynamic>.from(menuData)
+      ..removeWhere((key, value) =>
+          searchQuery.isNotEmpty && !key.toLowerCase().contains(searchQuery.toLowerCase()));
+
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -209,7 +212,11 @@ class _MainMenuState extends State<MainMenu> {
             : TextField(
                 controller: searchController,
                 autofocus: true,
-                decoration: const InputDecoration(hintText: 'Axtar...', border: InputBorder.none),
+                decoration: const InputDecoration(
+                  hintText: 'Axtar...',
+                  border: InputBorder.none,
+                  filled: false,
+                ),
                 onChanged: (v) => setState(() => searchQuery = v),
               ),
         actions: [
@@ -224,7 +231,7 @@ class _MainMenuState extends State<MainMenu> {
             IconButton(icon: const Icon(Icons.notifications), onPressed: _showNotificationHistory),
           if (allWrongs.isNotEmpty && widget.data == null)
             IconButton(
-              icon: Icon(Icons.delete_sweep, color: Theme.of(context).colorScheme.error),
+              icon: Icon(Icons.delete_sweep, color: scheme.error),
               onPressed: _showResetDialog,
             ),
           IconButton(
@@ -239,65 +246,83 @@ class _MainMenuState extends State<MainMenu> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          if (_isSyncing) const LinearProgressIndicator(),
-          if (widget.data == null && searchQuery.isEmpty) _buildWrongAnswersTile(),
-          Expanded(
-            child: filteredData.isEmpty
-                ? Center(
-                    child: Text(
-                      widget.data == null ? 'Məlumat bazası boşdur. Sync düyməsi ilə yükləyin.' : 'Heç bir nəticə tapılmadı',
-                    ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    itemCount: filteredData.length,
-                    separatorBuilder: (c, i) => const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      final key = filteredData.keys.elementAt(index);
-                      final value = filteredData[key];
-                      final isFolder = value is Map;
-                      final bankWrongCount = allWrongs.where((w) => w.contains(key)).length;
-
-                      return Card(
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          leading: CircleAvatar(
-                            backgroundColor:
-                                isFolder ? Theme.of(context).colorScheme.secondaryContainer : Theme.of(context).colorScheme.primaryContainer,
-                            child: Icon(isFolder ? Icons.folder_rounded : Icons.quiz_rounded),
-                          ),
-                          title: Text(key, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: (!isFolder && bankWrongCount > 0)
-                              ? Text(
-                                  '$bankWrongCount səhv cavab',
-                                  style: TextStyle(
-                                    color: Theme.of(context).colorScheme.error,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                )
-                              : null,
-                          trailing: const Icon(Icons.chevron_right_rounded, size: 20),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => isFolder
-                                    ? MainMenu(data: value as Map<String, dynamic>, title: key)
-                                    : QuizPage(bankName: key, bankData: value),
-                              ),
-                            ).then((_) => _loadWrongCount());
-                          },
-                        ),
-                      );
-                    },
-                  ),
+      body: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [scheme.primaryContainer.withOpacity(0.22), scheme.surface],
           ),
-        ],
+        ),
+        child: Column(
+          children: [
+            if (_isSyncing) const LinearProgressIndicator(),
+            if (widget.data == null && searchQuery.isEmpty) _buildWrongAnswersTile(),
+            Expanded(
+              child: filteredData.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          widget.data == null
+                              ? 'Məlumat bazası boşdur. Sync düyməsi ilə yükləyin.'
+                              : 'Heç bir nəticə tapılmadı',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                      itemCount: filteredData.length,
+                      separatorBuilder: (c, i) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final key = filteredData.keys.elementAt(index);
+                        final value = filteredData[key];
+                        final isFolder = value is Map;
+                        final bankWrongCount =
+                            allWrongs.where((w) => w.contains(key)).length;
+
+                        return Card(
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            leading: CircleAvatar(
+                              backgroundColor: isFolder
+                                  ? scheme.tertiaryContainer
+                                  : scheme.primaryContainer,
+                              child: Icon(
+                                isFolder ? Icons.folder_copy_rounded : Icons.quiz_rounded,
+                                color: isFolder ? scheme.onTertiaryContainer : scheme.onPrimaryContainer,
+                              ),
+                            ),
+                            title: Text(key, style: const TextStyle(fontWeight: FontWeight.w700)),
+                            subtitle: (!isFolder && bankWrongCount > 0)
+                                ? Text(
+                                    '$bankWrongCount səhv cavab',
+                                    style: TextStyle(
+                                      color: scheme.error,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  )
+                                : null,
+                            trailing: Icon(Icons.chevron_right_rounded, color: scheme.primary),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => isFolder
+                                      ? MainMenu(data: value as Map<String, dynamic>, title: key)
+                                      : QuizPage(bankName: key, bankData: value),
+                                ),
+                              ).then((_) => _loadWrongCount());
+                            },
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -325,29 +350,33 @@ class _MainMenuState extends State<MainMenu> {
   Widget _buildWrongAnswersTile() {
     if (allWrongs.isEmpty) return const SizedBox.shrink();
 
+    final scheme = Theme.of(context).colorScheme;
     return Card(
-      margin: const EdgeInsets.all(12),
-      elevation: 0,
-      color: Theme.of(context).colorScheme.errorContainer,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+      color: scheme.errorContainer,
       child: ListTile(
-        leading: Icon(Icons.history_edu_rounded, color: Theme.of(context).colorScheme.error, size: 28),
+        leading: Icon(Icons.history_edu_rounded, color: scheme.error, size: 28),
         title: Text(
           'Səhv etdiyim suallar',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onErrorContainer),
+          style: TextStyle(fontWeight: FontWeight.bold, color: scheme.onErrorContainer),
         ),
         subtitle: Text('${allWrongs.length} sual təkrar gözləyir'),
         trailing: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.error,
+          backgroundColor: scheme.error,
           radius: 15,
           child: const Icon(Icons.play_arrow, color: Colors.white, size: 18),
         ),
         onTap: () {
-          final wrongQuestions = allWrongs.map((q) => Question.fromJson(json.decode(q))).toList();
+          final wrongQuestions = allWrongs
+              .map((q) => Question.fromJson(json.decode(q) as Map<String, dynamic>))
+              .toList();
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => QuizPage(bankName: 'Səhvlərim', bankData: {'questions': wrongQuestions}),
+              builder: (context) => QuizPage(
+                bankName: 'Səhvlərim',
+                bankData: {'questions': wrongQuestions},
+              ),
             ),
           ).then((_) => _loadWrongCount());
         },
