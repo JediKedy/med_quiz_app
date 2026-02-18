@@ -13,6 +13,7 @@ dependencies:
   path_provider: ^2.1.1   # Faylları telefonda saxlamaq üçün
   shared_preferences: ^2.2.2 # Hash və Broadcast ID saxlamaq üçün
   crypto: ^3.0.3          # (Opsional) Hash yoxlaması üçün lazımdırsa
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:
