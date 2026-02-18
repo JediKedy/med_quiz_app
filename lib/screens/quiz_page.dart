@@ -18,8 +18,7 @@ class QuizPage extends StatefulWidget {
 }
 
 class _QuizPageState extends State<QuizPage> {
-  final Map<int, int> _userAnswers = {};
-
+  Map<int, int> _userAnswers = {}; // Sualın İndeksi : Seçilmiş Variantın İndeksi
   List<Question> _questions = [];
   int _currentIndex = 0;
   bool _isAnswered = false;
@@ -32,6 +31,7 @@ class _QuizPageState extends State<QuizPage> {
     _initQuiz();
   }
 
+  /// Quiz-i başladır: Sualları yükləyir və yaddaşı yoxlayır
   Future<void> _initQuiz() async {
     await _loadQuestions();
     if (!mounted) return;
@@ -41,28 +41,51 @@ class _QuizPageState extends State<QuizPage> {
       return;
     }
 
-    _shuffleQuestionOptions(_questions);
-
     final prefs = await SharedPreferences.getInstance();
     final savedIndex = prefs.getInt('progress_${widget.bankName}') ?? 0;
+    final savedAnswers = prefs.getString('answers_${widget.bankName}');
 
-    if (!mounted) return;
-    if (savedIndex > 0 && savedIndex < _questions.length) {
-      _showContinueDialog(savedIndex);
+    if (savedIndex > 0 || savedAnswers != null) {
+      _showContinueDialog(savedIndex, savedAnswers);
     } else {
       _showModeSelection();
     }
   }
 
-  void _shuffleQuestionOptions(List<Question> questions) {
-    for (final q in questions) {
-      if (q.correct < 0 || q.correct >= q.options.length) continue;
-      final correctAnswerText = q.options[q.correct];
-      q.options.shuffle();
-      q.correct = q.options.indexOf(correctAnswerText);
-    }
+  /// Sualları və variantları qarışdıran əsas funksiya
+  void _shuffleEverything() {
+    setState(() {
+      // 1. Sualların sırasını qarışdır
+      _questions.shuffle();
+      
+      // 2. Hər sualın daxilindəki variantları qarışdır və 'correct' indeksini yenilə
+      for (final q in _questions) {
+        if (q.options.isEmpty) continue;
+        final correctAnswerText = q.options[q.correct];
+        q.options.shuffle();
+        q.correct = q.options.indexOf(correctAnswerText);
+      }
+      
+      _currentIndex = 0;
+      _userAnswers.clear();
+      _updateCurrentState();
+    });
   }
 
+  /// Cari sualın vəziyyətini (əvvəl cavab verilibmi?) yeniləyir
+  void _updateCurrentState() {
+    setState(() {
+      if (_userAnswers.containsKey(_currentIndex)) {
+        _isAnswered = true;
+        _selectedOption = _userAnswers[_currentIndex];
+      } else {
+        _isAnswered = false;
+        _selectedOption = null;
+      }
+    });
+  }
+
+  /// Variant seçildikdə
   void _answerQuestion(int i) {
     if (_isAnswered) return;
 
@@ -72,8 +95,11 @@ class _QuizPageState extends State<QuizPage> {
       _userAnswers[_currentIndex] = i;
     });
 
+    _saveProgress();
+
+    // Avtomatik növbəti suala keçid (gecikmə ilə)
     Future.delayed(const Duration(milliseconds: 700), () {
-      if (!mounted || _currentIndex >= _questions.length) return;
+      if (!mounted) return;
       _nextQuestion();
     });
   }
@@ -82,13 +108,7 @@ class _QuizPageState extends State<QuizPage> {
     if (_currentIndex < _questions.length - 1) {
       setState(() {
         _currentIndex++;
-        if (_userAnswers.containsKey(_currentIndex)) {
-          _isAnswered = true;
-          _selectedOption = _userAnswers[_currentIndex];
-        } else {
-          _isAnswered = false;
-          _selectedOption = null;
-        }
+        _updateCurrentState();
       });
       _saveProgress();
     } else {
@@ -97,26 +117,22 @@ class _QuizPageState extends State<QuizPage> {
   }
 
   void _previousQuestion() {
-    if (_currentIndex <= 0) return;
-
-    setState(() {
-      _currentIndex--;
-      _selectedOption = _userAnswers[_currentIndex];
-      _isAnswered = _selectedOption != null;
-    });
+    if (_currentIndex > 0) {
+      setState(() {
+        _currentIndex--;
+        _updateCurrentState();
+      });
+    }
   }
 
+  /// Nəticəni hesablayıb bitirir
   void _calculateFinalScoreAndFinish() {
     var finalScore = 0;
-    for (final entry in _userAnswers.entries) {
-      final index = entry.key;
-      final selectedIdx = entry.value;
-      if (index >= _questions.length) continue;
-
-      if (selectedIdx == _questions[index].correct) {
+    for (int i = 0; i < _questions.length; i++) {
+      if (_userAnswers[i] == _questions[i].correct) {
         finalScore++;
-      } else {
-        _saveWrong(_questions[index]);
+      } else if (_userAnswers.containsKey(i)) {
+        _saveWrong(_questions[i]);
       }
     }
 
@@ -135,163 +151,216 @@ class _QuizPageState extends State<QuizPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     final q = _questions[_currentIndex];
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.bankName),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Sual ${_currentIndex + 1}/${_questions.length}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                if (_currentIndex > 0)
-                  TextButton.icon(
-                    onPressed: _previousQuestion,
-                    icon: const Icon(Icons.undo, size: 18),
-                    label: const Text('Əvvəlki'),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: LinearProgressIndicator(
-                value: (_currentIndex + 1) / _questions.length,
-                minHeight: 9,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              color: scheme.surfaceContainerLow,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  q.question,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-            if (q.image != null && q.image!.trim().isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _QuestionImage(imagePath: q.image!),
-            ],
-            const SizedBox(height: 16),
-            ...q.options.asMap().entries.map((e) {
-              var cardColor = scheme.surface;
-              var borderColor = scheme.outlineVariant;
-
-              if (_isAnswered) {
-                if (e.key == q.correct) {
-                  cardColor = Colors.green.withOpacity(0.15);
-                  borderColor = Colors.green;
-                } else if (e.key == _selectedOption) {
-                  cardColor = Colors.red.withOpacity(0.12);
-                  borderColor = Colors.red;
-                }
-              }
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                child: InkWell(
-                  onTap: () => _answerQuestion(e.key),
-                  borderRadius: BorderRadius.circular(16),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: cardColor,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: borderColor,
-                        width: _selectedOption == e.key ? 2 : 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          '${String.fromCharCode(65 + e.key)}) ',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+      appBar: AppBar(title: Text(widget.bankName)),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // İndikator və Naviqasiya barı
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Sual ${_currentIndex + 1}/${_questions.length}', 
+                          style: Theme.of(context).textTheme.titleMedium),
+                      if (_currentIndex > 0)
+                        TextButton.icon(
+                          onPressed: _previousQuestion,
+                          icon: const Icon(Icons.arrow_back_ios, size: 14),
+                          label: const Text('Əvvəlki'),
                         ),
-                        Expanded(child: Text(e.value)),
-                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(
+                    value: (_currentIndex + 1) / _questions.length,
+                    minHeight: 8,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Sual Mətni
+                  Card(
+                    elevation: 0,
+                    color: scheme.surfaceContainerLow,
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(q.question, 
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                     ),
                   ),
-                ),
-              );
-            }),
-          ],
-        ),
+
+                  if (q.image != null && q.image!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _QuestionImage(imagePath: q.image!),
+                  ],
+
+                  const SizedBox(height: 24),
+
+                  // Variantlar Siyahısı
+                  ...q.options.asMap().entries.map((e) {
+                    bool isCorrect = _isAnswered && e.key == q.correct;
+                    bool isWrong = _isAnswered && e.key == _selectedOption && e.key != q.correct;
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: InkWell(
+                        onTap: () => _answerQuestion(e.key),
+                        borderRadius: BorderRadius.circular(12),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isCorrect ? Colors.green.withOpacity(0.15) : 
+                                   isWrong ? Colors.red.withOpacity(0.15) : scheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isCorrect ? Colors.green : 
+                                     isWrong ? Colors.red : scheme.outlineVariant,
+                              width: (isCorrect || isWrong) ? 2 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 15,
+                                backgroundColor: isCorrect ? Colors.green : 
+                                               isWrong ? Colors.red : scheme.secondaryContainer,
+                                child: Text(String.fromCharCode(65 + e.key), 
+                                    style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer)),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(child: Text(e.value)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+          
+          // Alt panel: Növbəti düyməsi
+          if (_isAnswered)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                border: Border(top: BorderSide(color: scheme.outlineVariant)),
+              ),
+              child: FilledButton.icon(
+                onPressed: _nextQuestion,
+                style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
+                icon: const Icon(Icons.arrow_forward),
+                label: Text(_currentIndex == _questions.length - 1 ? "Testi Bitir" : "Növbəti Sual"),
+              ),
+            ),
+        ],
       ),
     );
   }
 
+  // --- Məntiq Hissəsi (Yaddaş və Yükləmə) ---
+
   Future<void> _loadQuestions() async {
     try {
       if (widget.bankData is Map && widget.bankData['questions'] is List) {
-        final rawQuestions = widget.bankData['questions'] as List;
-        _questions = rawQuestions.map((q) {
-          if (q is Question) return q;
-          return Question.fromJson(Map<String, dynamic>.from(q as Map));
-        }).toList();
+        _questions = (widget.bankData['questions'] as List)
+            .map((q) => q is Question ? q : Question.fromJson(Map<String, dynamic>.from(q)))
+            .toList();
       } else if (widget.bankData is String) {
         final dir = await getApplicationDocumentsDirectory();
         final file = File('${dir.path}/${widget.bankData}');
         if (await file.exists()) {
-          final data = json.decode(await file.readAsString()) as Map<String, dynamic>;
-          final rawQuestions = data['questions'] as List<dynamic>? ?? [];
-          _questions = rawQuestions
-              .map((q) => Question.fromJson(Map<String, dynamic>.from(q as Map)))
-              .toList();
+          final data = json.decode(await file.readAsString());
+          _questions = (data['questions'] as List).map((q) => Question.fromJson(q)).toList();
         }
       }
     } catch (e) {
-      debugPrint('Sual yükləmə xətası: $e');
+      debugPrint("Sual yükləmə xətası: $e");
     }
+    setState(() => _isLoading = false);
+  }
 
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
+  void _showModeSelection() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Sıralama seçin"),
+        content: const Text("Suallar və variantlar qarışıq gəlsin?"),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _shuffleEverything();
+            },
+            child: const Text("Qarışıq"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Sıralı"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showContinueDialog(int idx, String? answersJson) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Davam edilsin?"),
+        content: const Text("Yarımçıq qalan testiniz var."),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _clearProgress();
+              _showModeSelection();
+            },
+            child: const Text("Sıfırla"),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (answersJson != null) {
+                final Map<String, dynamic> decoded = json.decode(answersJson);
+                _userAnswers = decoded.map((k, v) => MapEntry(int.parse(k), v as int));
+              }
+              _currentIndex = idx;
+              Navigator.pop(ctx);
+              _updateCurrentState();
+            },
+            child: const Text("Davam et"),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _saveProgress() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('progress_${widget.bankName}', _currentIndex);
+    String answersJson = json.encode(_userAnswers.map((k, v) => MapEntry(k.toString(), v)));
+    await prefs.setString('answers_${widget.bankName}', answersJson);
   }
 
   Future<void> _clearProgress() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('progress_${widget.bankName}');
-  }
-
-  Future<void> _saveWrong(Question q) async {
-    final prefs = await SharedPreferences.getInstance();
-    final wrongs = prefs.getStringList('wrong_questions') ?? [];
-    final encoded = json.encode(q.toJson());
-
-    if (!wrongs.contains(encoded)) {
-      wrongs.add(encoded);
-      await prefs.setStringList('wrong_questions', wrongs);
-    }
-  }
-
-  void _showModeSelection() {
+    await prefs.remove('answers_${widget.bankName}');
     _userAnswers.clear();
     setState(() {
       _currentIndex = 0;
@@ -300,72 +369,37 @@ class _QuizPageState extends State<QuizPage> {
     });
   }
 
-  void _showContinueDialog(int idx) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Davam edilsin?'),
-        content: const Text('Bu test üçün saxlanmış irəliləyiş tapıldı.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _showModeSelection();
-            },
-            child: const Text('Yenidən başla'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() {
-                _currentIndex = idx;
-                _selectedOption = _userAnswers[idx];
-                _isAnswered = _selectedOption != null;
-              });
-            },
-            child: const Text('Davam et'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _saveWrong(Question q) async {
+    final prefs = await SharedPreferences.getInstance();
+    final wrongs = prefs.getStringList('wrong_questions') ?? [];
+    final encoded = json.encode(q.toJson());
+    if (!wrongs.contains(encoded)) {
+      wrongs.add(encoded);
+      await prefs.setStringList('wrong_questions', wrongs);
+    }
   }
 }
 
+/// Sualın şəklini göstərən köməkçi Widget
 class _QuestionImage extends StatelessWidget {
   final String imagePath;
-
   const _QuestionImage({required this.imagePath});
 
   @override
   Widget build(BuildContext context) {
-    final isNetworkImage = imagePath.startsWith('http://') || imagePath.startsWith('https://');
-
-    Widget imageWidget;
-    if (isNetworkImage) {
-      imageWidget = CachedNetworkImage(
-        imageUrl: imagePath,
-        fit: BoxFit.cover,
-        placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-        errorWidget: (context, url, error) => const Center(child: Icon(Icons.broken_image_outlined, size: 36)),
-      );
-    } else {
-      final file = File(imagePath);
-      imageWidget = Image.file(
-        file,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined, size: 36)),
-      );
-    }
-
+    final isNetwork = imagePath.startsWith('http');
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: ColoredBox(
-          color: Theme.of(context).colorScheme.surfaceContainer,
-          child: imageWidget,
-        ),
+      child: Container(
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        child: isNetwork 
+          ? CachedNetworkImage(
+              imageUrl: imagePath, 
+              fit: BoxFit.contain,
+              placeholder: (c,u) => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
+              errorWidget: (c,u,e) => const Icon(Icons.broken_image, size: 50),
+            )
+          : Image.file(File(imagePath), fit: BoxFit.contain),
       ),
     );
   }
