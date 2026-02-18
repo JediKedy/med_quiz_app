@@ -33,7 +33,7 @@ class _MainMenuState extends State<MainMenu> {
   Future<void> _loadInitialData() async {
     if (widget.data == null) {
       await loadBanksJson();
-      _fetchAndStoreNotifications(); // GitHub siyahısını yoxla
+      _fetchAndStoreNotifications(); // GitHub-dan bildirişləri yoxla
     } else {
       menuData = widget.data!;
     }
@@ -64,9 +64,13 @@ class _MainMenuState extends State<MainMenu> {
     setState(() {
       allWrongs = [];
     });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Səhv suallar təmizləndi")),
+      );
+    }
   }
 
-  // GitHub-dan siyahı (List) şəklində bildirişləri çəkir
   Future<void> _fetchAndStoreNotifications() async {
     try {
       final url = Uri.parse("https://raw.githubusercontent.com/JediKedy/med_quiz_app_questions/refs/heads/main/notifications.json");
@@ -85,7 +89,6 @@ class _MainMenuState extends State<MainMenu> {
           int id = notif['id'] ?? 0;
           bool isActive = notif['is_active'] ?? false;
 
-          // Əgər aktivdirsə və ID yenidirsə
           if (isActive && id > lastSeenId) {
             String time = "${DateTime.now().day}.${DateTime.now().month}.${DateTime.now().year} ${DateTime.now().hour}:${DateTime.now().minute}";
             
@@ -176,8 +179,12 @@ class _MainMenuState extends State<MainMenu> {
           : TextField(
               controller: searchController,
               autofocus: true,
-              style: TextStyle(color: Colors.black),
-              decoration: InputDecoration(hintText: "Axtar...", border: InputBorder.none, hintStyle: TextStyle(color: Colors.white70)),
+              style: TextStyle(color: Colors.white), // Rəng ağ olaraq düzəldildi
+              decoration: InputDecoration(
+                hintText: "Axtar...", 
+                border: InputBorder.none, 
+                hintStyle: TextStyle(color: Colors.white70)
+              ),
               onChanged: (v) => setState(() => searchQuery = v),
             ),
         actions: [
@@ -201,35 +208,41 @@ class _MainMenuState extends State<MainMenu> {
         children: [
           if (widget.data == null && searchQuery.isEmpty) _buildWrongAnswersTile(),
           Expanded(
-            child: ListView.separated(
-              itemCount: filteredData.length,
-              separatorBuilder: (c, i) => Divider(height: 1),
-              itemBuilder: (context, index) {
-                String key = filteredData.keys.elementAt(index);
-                var value = filteredData[key];
-                bool isFolder = value is Map;
-                int bankWrongCount = allWrongs.where((w) => w.contains(key)).length;
+            child: filteredData.isEmpty
+              ? Center(child: Text("Heç bir nəticə tapılmadı"))
+              : ListView.separated(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  itemCount: filteredData.length,
+                  separatorBuilder: (c, i) => Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    String key = filteredData.keys.elementAt(index);
+                    var value = filteredData[key];
+                    bool isFolder = value is Map;
+                    int bankWrongCount = allWrongs.where((w) => w.contains(key)).length;
 
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: isFolder ? Colors.orange.shade50 : Colors.blue.shade50,
-                    child: Icon(isFolder ? Icons.folder : Icons.quiz, color: isFolder ? Colors.orange : Colors.blue),
-                  ),
-                  title: Text(key),
-                  subtitle: (!isFolder && bankWrongCount > 0) ? Text("$bankWrongCount səhv", style: TextStyle(color: Colors.red)) : null,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => isFolder 
-                          ? MainMenu(data: value as Map<String, dynamic>, title: key)
-                          : QuizPage(bankName: key, bankData: value),
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: isFolder ? Colors.orange.shade50 : Colors.blue.shade50,
+                        child: Icon(isFolder ? Icons.folder : Icons.quiz, color: isFolder ? Colors.orange : Colors.blue),
                       ),
-                    ).then((_) => _loadWrongCount());
+                      title: Text(key, style: TextStyle(fontWeight: FontWeight.w500)),
+                      subtitle: (!isFolder && bankWrongCount > 0) 
+                        ? Text("$bankWrongCount səhv cavab", style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold)) 
+                        : null,
+                      trailing: Icon(Icons.chevron_right, size: 20),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => isFolder 
+                              ? MainMenu(data: value as Map<String, dynamic>, title: key)
+                              : QuizPage(bankName: key, bankData: value),
+                          ),
+                        ).then((_) => _loadWrongCount());
+                      },
+                    );
                   },
-                );
-              },
-            ),
+                ),
           ),
         ],
       ),
@@ -240,11 +253,14 @@ class _MainMenuState extends State<MainMenu> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text("Sıfırla?"),
-        content: Text("Bütün səhv cavablar silinsin?"),
+        title: Text("Səhvləri sıfırla?"),
+        content: Text("Bütün səhv etdiyiniz suallar siyahıdan silinəcək."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text("Xeyr")),
-          TextButton(onPressed: () { _resetWrongs(); Navigator.pop(ctx); }, child: Text("Bəli", style: TextStyle(color: Colors.red))),
+          TextButton(
+            onPressed: () { _resetWrongs(); Navigator.pop(ctx); }, 
+            child: Text("Bəli, sil", style: TextStyle(color: Colors.red))
+          ),
         ],
       ),
     );
@@ -254,14 +270,24 @@ class _MainMenuState extends State<MainMenu> {
     if (allWrongs.isEmpty) return SizedBox();
     return Card(
       margin: EdgeInsets.all(12),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       color: Colors.red.shade50,
       child: ListTile(
-        leading: Icon(Icons.history_edu, color: Colors.red),
-        title: Text("Səhv etdiyim suallar", style: TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text("${allWrongs.length} sual gözləyir"),
+        leading: Icon(Icons.history_edu, color: Colors.red, size: 30),
+        title: Text("Səhv etdiyim suallar", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade900)),
+        subtitle: Text("${allWrongs.length} sual təkrar gözləyir"),
+        trailing: CircleAvatar(
+          backgroundColor: Colors.red,
+          radius: 15,
+          child: Icon(Icons.play_arrow, color: Colors.white, size: 18),
+        ),
         onTap: () {
           List<Question> wrqs = allWrongs.map((q) => Question.fromJson(json.decode(q))).toList();
-          Navigator.push(context, MaterialPageRoute(builder: (context) => QuizPage(bankName: "Səhvlərim", bankData: {"questions": wrqs}))).then((_) => _loadWrongCount());
+          Navigator.push(
+            context, 
+            MaterialPageRoute(builder: (context) => QuizPage(bankName: "Səhvlərim", bankData: {"questions": wrqs}))
+          ).then((_) => _loadWrongCount());
         },
       ),
     );
