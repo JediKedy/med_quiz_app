@@ -11,6 +11,7 @@ class Question {
     this.image,
   });
 
+  // JSON-dan obyektə çevirmək üçün (Mövcuddur)
   factory Question.fromJson(Map<String, dynamic> json) {
     return Question(
       question: json['question'],
@@ -18,5 +19,15 @@ class Question {
       correct: json['correct'],
       image: json['image'],
     );
+  }
+
+  // Obyektdən JSON-a çevirmək üçün (BU HİSSƏ ÇATIŞMIRDI)
+  Map<String, dynamic> toJson() {
+    return {
+      'question': question,
+      'options': options,
+      'correct': correct,
+      'image': image,
+    };
   }
 }

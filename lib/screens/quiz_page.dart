@@ -3,12 +3,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/question_model.dart';
 import 'score_screen.dart';
 
 class QuizPage extends StatefulWidget {
   final String bankName;
-  final dynamic bankData; // String (path) və ya Map (composite config)
+  final dynamic bankData;
 
   QuizPage({required this.bankName, required this.bankData});
 
@@ -22,200 +23,188 @@ class _QuizPageState extends State<QuizPage> {
   int _score = 0;
   bool _isAnswered = false;
   int? _selectedOption;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadQuestions();
+    _initQuiz();
+  }
+
+  Future<void> _initQuiz() async {
+    await _loadQuestions();
+    if (_questions.isEmpty) { Navigator.pop(context); return; }
+
+    final prefs = await SharedPreferences.getInstance();
+    int savedIndex = prefs.getInt('progress_${widget.bankName}') ?? 0;
+
+    if (savedIndex > 0 && savedIndex < _questions.length) {
+      _showContinueDialog(savedIndex);
+    } else {
+      _showModeSelection();
+    }
+  }
+
+  String? _findFilePath(Map<String, dynamic> data, String bankName) {
+    for (var key in data.keys) {
+      var value = data[key];
+      if (key == bankName && value is String) return value;
+      if (value is Map<String, dynamic>) {
+        var found = _findFilePath(value, bankName);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
+  Future<List<Question>> _collectQuestions(Map<String, dynamic> allBanks, dynamic config) async {
+    List<Question> result = [];
+    final dir = await getApplicationDocumentsDirectory();
+
+    if (config is Map) {
+      if (config.containsKey('banks')) {
+        for (String bName in config['banks']) {
+          String? path = _findFilePath(allBanks, bName);
+          if (path != null) {
+            File f = File("${dir.path}/$path");
+            if (await f.exists()) {
+              var d = json.decode(await f.readAsString());
+              result.addAll((d['questions'] as List).map((q) => Question.fromJson(q)));
+            }
+          }
+        }
+      } else if (config.containsKey('parts')) {
+        Map<String, dynamic> p = config['parts'];
+        for (var e in p.entries) {
+          var sub = allBanks['Ümumi sınaqlar']?[e.key];
+          if (sub != null) {
+            List<Question> pool = await _collectQuestions(allBanks, sub);
+            pool.shuffle();
+            result.addAll(pool.take(e.value));
+          }
+        }
+      }
+      
+      if (config.containsKey('total') && config['total'] < result.length) {
+        result.shuffle();
+        result = result.sublist(0, config['total']);
+      }
+    }
+    return result;
   }
 
   Future<void> _loadQuestions() async {
-  final directory = await getApplicationDocumentsDirectory();
-  List<Question> loadedQuestions = [];
-
-  // 1. Normal tək bank yükləmə (String path)
-  if (widget.bankData is String) {
-    File file = File("${directory.path}/${widget.bankData}");
-    if (await file.exists()) {
-      var data = json.decode(await file.readAsString());
-      loadedQuestions = (data['questions'] as List)
-          .map((q) => Question.fromJson(q))
-          .toList();
-    }
-  } 
-  // 2. Ümumi Sınaq məntiqi (Map config)
-  else if (widget.bankData is Map) {
-    Map<String, dynamic> config = widget.bankData;
-    
-    // Bütün banks.json-u yenidən oxuyuruq ki, digər bankların yollarını tapa bilək
-    File mainBanksFile = File("${directory.path}/banks.json");
-    Map<String, dynamic> allBanks = json.decode(await mainBanksFile.readAsString());
-
-    // Funksiya: Bank adına görə sualları gətirir
-    Future<List<Question>> getQuestionsFromBank(String name) async {
-      String? path = _findPathInMap(allBanks, name);
-      if (path != null) {
-        File f = File("${directory.path}/$path");
-        if (await f.exists()) {
-          var d = json.decode(await f.readAsString());
-          return (d['questions'] as List).map((q) => Question.fromJson(q)).toList();
-        }
-      }
-      return [];
+    if (widget.bankData is Map && widget.bankData.containsKey('questions')) {
+      _questions = List<Question>.from(widget.bankData['questions']);
+      setState(() => _isLoading = false);
+      return;
     }
 
-    if (config.containsKey('banks')) {
-      // Birbaşa bank siyahısı: "total" qədər sual seç
-      for (String bName in config['banks']) {
-        loadedQuestions.addAll(await getQuestionsFromBank(bName));
+    final dir = await getApplicationDocumentsDirectory();
+    try {
+      File main = File("${dir.path}/banks.json");
+      Map<String, dynamic> all = json.decode(await main.readAsString());
+
+      if (widget.bankData is String) {
+        File f = File("${dir.path}/${widget.bankData}");
+        var d = json.decode(await f.readAsString());
+        _questions = (d['questions'] as List).map((q) => Question.fromJson(q)).toList();
+      } else {
+        _questions = await _collectQuestions(all, widget.bankData);
       }
-      loadedQuestions.shuffle();
-      if (config['total'] < loadedQuestions.length) {
-        loadedQuestions = loadedQuestions.sublist(0, config['total']);
-      }
-    } else if (config.containsKey('parts')) {
-      // Hissələr (parts) məntiqi: hər hissədən müəyyən sayda
-      Map<String, dynamic> parts = config['parts'];
-      for (var entry in parts.entries) {
-        // Burada "Kardiologiya ümumi" kimi alt-sınaqları tapmaq lazımdır
-        var partConfig = allBanks['Ümumi sınaqlar'][entry.key];
-        List<Question> partPool = [];
-        for (String bName in partConfig['banks']) {
-          partPool.addAll(await getQuestionsFromBank(bName));
-        }
-        partPool.shuffle();
-        loadedQuestions.addAll(partPool.take(entry.value));
-      }
-    }
+    } catch (e) { debugPrint("Xəta: $e"); }
+    setState(() => _isLoading = false);
   }
 
-  setState(() {
-    _questions = loadedQuestions..shuffle();
-  });
-}
-
-// Rekursiv olaraq bank adını axtarıb yolunu (path) tapan köməkçi funksiya
-String? _findPathInMap(Map<String, dynamic> map, String targetKey) {
-  for (var entry in map.entries) {
-    if (entry.key == targetKey && entry.value is String) return entry.value;
-    if (entry.value is Map<String, dynamic>) {
-      String? found = _findPathInMap(entry.value, targetKey);
-      if (found != null) return found;
-    }
+  void _showModeSelection() {
+    showDialog(context: context, barrierDismissible: false, builder: (ctx) => AlertDialog(
+      title: Text("Rejim"),
+      actions: [
+        TextButton(onPressed: () { setState(() { _questions.shuffle(); }); Navigator.pop(ctx); }, child: Text("Qarışıq")),
+        TextButton(onPressed: () { Navigator.pop(ctx); }, child: Text("Sıralı")),
+      ],
+    ));
   }
-  return null;
-}
 
-  void _answerQuestion(int index) {
+  void _showContinueDialog(int idx) {
+    showDialog(context: context, barrierDismissible: false, builder: (ctx) => AlertDialog(
+      title: Text("Davam?"),
+      actions: [
+        TextButton(onPressed: () { _currentIndex = 0; Navigator.pop(ctx); _showModeSelection(); }, child: Text("Başdan")),
+        TextButton(onPressed: () { setState(() { _currentIndex = idx; }); Navigator.pop(ctx); }, child: Text("Davam")),
+      ],
+    ));
+  }
+
+  void _answerQuestion(int i) {
     if (_isAnswered) return;
     setState(() {
-      _isAnswered = true;
-      _selectedOption = index;
-      if (index == _questions[_currentIndex].correct) {
-        _score++;
-      }
+      _isAnswered = true; _selectedOption = i;
+      if (i == _questions[_currentIndex].correct) _score++;
+      else _saveWrong(_questions[_currentIndex]);
     });
-
-    Future.delayed(Duration(seconds: 1), () {
+    Future.delayed(Duration(milliseconds: 800), () {
       if (_currentIndex < _questions.length - 1) {
-        setState(() {
-          _currentIndex++;
-          _isAnswered = false;
-          _selectedOption = null;
-        });
-      } else {
-        _showResults();
-      }
+        setState(() { _currentIndex++; _isAnswered = false; _selectedOption = null; });
+        _saveProgress();
+      } else { _clearProgress(); _showRes(); }
     });
   }
 
-void _showResults() {
-  Navigator.pushReplacement(
-    context,
-    MaterialPageRoute(
-      builder: (context) => ScoreScreen(
-        score: _score,
-        total: _questions.length,
-        bankName: widget.bankName,
-      ),
-    ),
-  );
-}
+  Future<void> _saveProgress() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('progress_${widget.bankName}', _currentIndex);
+  }
+
+  Future<void> _clearProgress() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('progress_${widget.bankName}');
+  }
+
+  Future<void> _saveWrong(Question q) async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> w = prefs.getStringList('wrong_questions') ?? [];
+    String j = json.encode(q.toJson());
+    if (!w.contains(j)) { w.add(j); await prefs.setStringList('wrong_questions', w); }
+  }
+
+  void _showRes() {
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => ScoreScreen(score: _score, total: _questions.length, bankName: widget.bankName)));
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (_questions.isEmpty) return Scaffold(body: Center(child: CircularProgressIndicator()));
-
-    final currentQ = _questions[_currentIndex];
+    if (_isLoading) return Scaffold(body: Center(child: CircularProgressIndicator()));
+    final q = _questions[_currentIndex];
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.bankName)),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: EdgeInsets.all(16),
         child: Column(
           children: [
             LinearProgressIndicator(value: (_currentIndex + 1) / _questions.length),
-            SizedBox(height: 20),
-            Text("Sual ${_currentIndex + 1}/${_questions.length}", style: TextStyle(fontSize: 16, color: Colors.grey)),
             SizedBox(height: 10),
-            Text(currentQ.question, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            if (currentQ.image != null) ...[
-              SizedBox(height: 15),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: CachedNetworkImage(
-                // Uri.encodeFull boşluqları və xüsusi simvolların URL-ə uyğunlaşdırılmasını təmin edir
-                imageUrl: Uri.encodeFull("https://raw.githubusercontent.com/JediKedy/med_quiz_app_questions/main/${currentQ.image}"),
-                placeholder: (context, url) => Center(child: CircularProgressIndicator()),
-                errorWidget: (context, url, error) => Column(
-                  children: [
-                    Icon(Icons.image_not_supported, size: 50, color: Colors.grey),
-                    Text("Şəkil yüklənmədi", style: TextStyle(color: Colors.grey)),
-                  ],
-                ),
-              fit: BoxFit.contain,
-            ),
-          ),
-        ],
+            Text("${_currentIndex + 1}/${_questions.length}"),
+            SizedBox(height: 10),
+            Text(q.question, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            if (q.image != null) ...[
+              SizedBox(height: 10),
+              CachedNetworkImage(imageUrl: "https://raw.githubusercontent.com/JediKedy/med_quiz_app_questions/main/${q.image}", height: 200),
+            ],
             SizedBox(height: 20),
-            Expanded(
-              child: ListView.builder(
-                itemCount: currentQ.options.length,
-                itemBuilder: (ctx, i) {
-                  Color btnColor = Colors.blue.shade50;
-                  if (_isAnswered) {
-                    if (i == currentQ.correct) btnColor = Colors.green.shade200;
-                    else if (i == _selectedOption) btnColor = Colors.red.shade200;
-                  }
-
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: AnimatedContainer(
-                      duration: Duration(milliseconds: 300),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: _isAnswered 
-                             ? (i == currentQ.correct ? Colors.green : (i == _selectedOption ? Colors.red : Colors.grey.shade300))
-                             : Colors.blue.shade200,
-                              width: 2,
-                        ),
-                      ),
-                      child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.blue.shade100,
-                        child: Text(String.fromCharCode(65 + i), style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                   ),
-                    title: Text(currentQ.options[i]),
-                    onTap: () => _answerQuestion(i),
-                   tileColor: btnColor, // yuxarıdakı rəng məntiqi ilə eyni
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                 ),
-               );
-                },
-              ),
-            ),
+            ...q.options.asMap().entries.map((e) {
+              Color c = Colors.white;
+              if (_isAnswered) {
+                if (e.key == q.correct) c = Colors.green.shade100;
+                else if (e.key == _selectedOption) c = Colors.red.shade100;
+              }
+              return Container(
+                margin: EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(color: c, border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(10)),
+                child: ListTile(title: Text(e.value), onTap: () => _answerQuestion(e.key)),
+              );
+            }).toList(),
           ],
         ),
       ),
