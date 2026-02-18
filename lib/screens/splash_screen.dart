@@ -3,19 +3,21 @@ import 'package:flutter/material.dart';
 import 'main_menu.dart';
 
 class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
   @override
-  _SplashScreenState createState() => _SplashScreenState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
-    
-    // Logo üçün böyümə animasiyası
+
     _controller = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
@@ -23,11 +25,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
     _controller.forward();
 
-    // 3 saniyə sonra Ana Menyuya keçid
-    Timer(Duration(seconds: 3), () {
+    Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => MainMenu()),
+        MaterialPageRoute(builder: (context) => const MainMenu()),
       );
     });
   }
@@ -40,15 +42,16 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       body: Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          // Tibbi mövzuya uyğun gradient rənglər
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.blue.shade800, Colors.blue.shade400],
+            colors: [scheme.primary, scheme.primaryContainer],
           ),
         ),
         child: Column(
@@ -57,43 +60,41 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             ScaleTransition(
               scale: _animation,
               child: Container(
-                padding: EdgeInsets.all(20),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: scheme.surface,
                   shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(color: Colors.black26, blurRadius: 10, spreadRadius: 2)
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black26, blurRadius: 10, spreadRadius: 2),
                   ],
                 ),
                 child: Icon(
-                  Icons.medical_services, // Və ya tətbiqinizin loqosu
+                  Icons.medical_services_rounded,
                   size: 80,
-                  color: Colors.blue.shade800,
+                  color: scheme.primary,
                 ),
               ),
             ),
-            SizedBox(height: 30),
+            const SizedBox(height: 30),
             Text(
-              "MED QUIZ",
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                letterSpacing: 2,
-              ),
+              'MED QUIZ',
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: scheme.onPrimary,
+                    letterSpacing: 2,
+                  ),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             Text(
-              "Rezidenturaya hazırlıq platforması",
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.white70,
-                fontStyle: FontStyle.italic,
-              ),
+              'Rezidenturaya hazırlıq platforması',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: scheme.onPrimary.withOpacity(0.85),
+                    fontStyle: FontStyle.italic,
+                  ),
             ),
-            SizedBox(height: 50),
+            const SizedBox(height: 50),
             CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              valueColor: AlwaysStoppedAnimation<Color>(scheme.onPrimary),
             ),
           ],
         ),
