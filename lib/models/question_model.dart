@@ -1,7 +1,7 @@
 class Question {
   final String question;
-  final List<String> options;
-  final int correct;
+  List<String> options; // final silindi
+  int correct;         // final silindi
   final String? image;
 
   Question({
@@ -11,7 +11,6 @@ class Question {
     this.image,
   });
 
-  // JSON-dan obyektə çevirmək üçün (Mövcuddur)
   factory Question.fromJson(Map<String, dynamic> json) {
     return Question(
       question: json['question'],
@@ -21,7 +20,6 @@ class Question {
     );
   }
 
-  // Obyektdən JSON-a çevirmək üçün (BU HİSSƏ ÇATIŞMIRDI)
   Map<String, dynamic> toJson() {
     return {
       'question': question,
