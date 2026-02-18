@@ -164,13 +164,19 @@ void _showResults() {
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: CachedNetworkImage(
-                  imageUrl: "https://raw.githubusercontent.com/ISTIFADE_ADIN/REPO/main/${currentQ.image}",
-                  placeholder: (context, url) => CircularProgressIndicator(),
-                  errorWidget: (context, url, error) => Icon(Icons.image_not_supported, size: 50),
-                  fit: BoxFit.contain,
+                // Uri.encodeFull boşluqları və xüsusi simvolların URL-ə uyğunlaşdırılmasını təmin edir
+                imageUrl: Uri.encodeFull("https://raw.githubusercontent.com/JediKedy/med_quiz_app_questions/main/${currentQ.image}"),
+                placeholder: (context, url) => Center(child: CircularProgressIndicator()),
+                errorWidget: (context, url, error) => Column(
+                  children: [
+                    Icon(Icons.image_not_supported, size: 50, color: Colors.grey),
+                    Text("Şəkil yüklənmədi", style: TextStyle(color: Colors.grey)),
+                  ],
                 ),
-              ),
-    ],
+              fit: BoxFit.contain,
+            ),
+          ),
+        ],
             SizedBox(height: 20),
             Expanded(
               child: ListView.builder(
