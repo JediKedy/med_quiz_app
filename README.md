@@ -1,3 +1,3 @@
-# med_quiz_app
+# Rezidentura Quiz App
 
-A new Flutter project.
+Rezidenturaya hazırlaşmaq üçün quiz app.
