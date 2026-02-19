@@ -18,9 +18,9 @@ class QuizPage extends StatefulWidget {
 }
 
 class _QuizPageState extends State<QuizPage> {
-  Map<int, int> _userAnswers = {}; 
+  Map<int, int> _userAnswers = {};
   List<Question> _questions = [];
-  Set<int> _bookmarkedIndices = {}; // Ulduzlanmış suallar
+  Set<int> _bookmarkedIndices = {};
   int _currentIndex = 0;
   bool _isAnswered = false;
   int? _selectedOption;
@@ -34,7 +34,7 @@ class _QuizPageState extends State<QuizPage> {
 
   Future<void> _initQuiz() async {
     await _loadQuestions();
-    await _loadBookmarks(); // Bookmarkları yüklə
+    await _loadBookmarks();
     if (!mounted) return;
 
     if (_questions.isEmpty) {
@@ -211,8 +211,8 @@ class _QuizPageState extends State<QuizPage> {
           score: finalScore,
           total: _questions.length,
           bankName: widget.bankName,
-          questions: _questions,    // Review üçün lazım olacaq
-          userAnswers: _userAnswers, // Review üçün lazım olacaq
+          questions: _questions,
+          userAnswers: _userAnswers,
         ),
       ),
     );
@@ -230,8 +230,14 @@ class _QuizPageState extends State<QuizPage> {
         title: Text(widget.bankName),
         actions: [
           IconButton(
-            icon: Icon(_bookmarkedIndices.contains(_currentIndex) ? Icons.bookmark : Icons.bookmark_border),
-            color: _bookmarkedIndices.contains(_currentIndex) ? Colors.orange : null,
+            icon: Icon(
+              _bookmarkedIndices.contains(_currentIndex)
+                  ? Icons.bookmark
+                  : Icons.bookmark_border,
+            ),
+            color: _bookmarkedIndices.contains(_currentIndex)
+                ? Colors.orange
+                : null,
             onPressed: _toggleBookmark,
           ),
           IconButton(
@@ -240,7 +246,8 @@ class _QuizPageState extends State<QuizPage> {
           ),
         ],
       ),
-      body: Column(
+      body: SafeArea(
+        child: Column(
         children: [
           Expanded(
             child: SingleChildScrollView(
@@ -340,6 +347,7 @@ class _QuizPageState extends State<QuizPage> {
               ),
             ),
         ],
+        ),
       ),
     );
   }
@@ -374,6 +382,7 @@ class _QuizPageState extends State<QuizPage> {
           TextButton(onPressed: () { Navigator.pop(ctx); _shuffleEverything(); }, child: const Text("Qarışıq")),
           FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text("Sıralı")),
         ],
+        ),
       ),
     );
   }
@@ -397,6 +406,7 @@ class _QuizPageState extends State<QuizPage> {
             _updateCurrentState();
           }, child: const Text("Davam et")),
         ],
+        ),
       ),
     );
   }
@@ -430,16 +440,55 @@ class _QuizPageState extends State<QuizPage> {
 class _QuestionImage extends StatelessWidget {
   final String imagePath;
   const _QuestionImage({required this.imagePath});
+
   @override
   Widget build(BuildContext context) {
-    final isNetwork = imagePath.startsWith('http');
+    final scheme = Theme.of(context).colorScheme;
+    final isNetwork = imagePath.startsWith('http://') || imagePath.startsWith('https://');
+    final normalizedPath = imagePath.startsWith('file://')
+        ? Uri.parse(imagePath).toFilePath()
+        : imagePath;
+
+    Widget errorWidget() {
+      return Container(
+        height: 180,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.broken_image_outlined, color: scheme.error),
+            const SizedBox(height: 8),
+            Text(
+              'Şəkil yüklənmədi',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      );
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        color: Theme.of(context).colorScheme.surfaceContainer,
-        child: isNetwork 
-          ? CachedNetworkImage(imageUrl: imagePath, fit: BoxFit.contain, placeholder: (c,u) => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())))
-          : Image.file(File(imagePath), fit: BoxFit.contain),
+        constraints: const BoxConstraints(minHeight: 160, maxHeight: 300),
+        width: double.infinity,
+        color: scheme.surfaceContainer,
+        child: isNetwork
+            ? CachedNetworkImage(
+                imageUrl: imagePath,
+                fit: BoxFit.contain,
+                placeholder: (context, url) => const SizedBox(
+                  height: 180,
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                errorWidget: (context, url, error) => errorWidget(),
+              )
+            : Image.file(
+                File(normalizedPath),
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => errorWidget(),
+              ),
       ),
     );
   }
