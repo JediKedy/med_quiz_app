@@ -95,7 +95,7 @@ class _MainMenuState extends State<MainMenu> {
   Future<void> _fetchAndStoreNotifications() async {
     try {
       final url = Uri.parse(
-        'https://raw.githubusercontent.com/JediKedy/med_quiz_app_questions/refs/heads/main/notifications.json',
+        'https://raw.githubusercontent.com/JediKedy/med_quiz_app_questions/main/notifications.json',
       );
       final response = await http.get(url).timeout(const Duration(seconds: 5));
 

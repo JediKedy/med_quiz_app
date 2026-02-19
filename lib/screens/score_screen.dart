@@ -1,22 +1,22 @@
 import 'package:flutter/material.dart';
 import '../theme_controller.dart';
 import '../models/question_model.dart';
-import 'review_screen.dart'; // ReviewScreen faylını yaratdığından əmin ol
+import 'review_screen.dart';
 
 class ScoreScreen extends StatelessWidget {
   final int score;
   final int total;
   final String bankName;
-  final List<Question> questions; // Yeni əlavə
-  final Map<int, int> userAnswers; // Yeni əlavə
+  final List<Question> questions;
+  final Map<int, int> userAnswers;
 
   const ScoreScreen({
     super.key,
     required this.score,
     required this.total,
     required this.bankName,
-    required this.questions, // Constructor-a əlavə edildi
-    required this.userAnswers, // Constructor-a əlavə edildi
+    required this.questions,
+    required this.userAnswers,
   });
 
   @override
