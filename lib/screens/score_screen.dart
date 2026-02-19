@@ -1,12 +1,23 @@
 import 'package:flutter/material.dart';
 import '../theme_controller.dart';
+import '../models/question_model.dart';
+import 'review_screen.dart'; // ReviewScreen faylını yaratdığından əmin ol
 
 class ScoreScreen extends StatelessWidget {
   final int score;
   final int total;
   final String bankName;
+  final List<Question> questions; // Yeni əlavə
+  final Map<int, int> userAnswers; // Yeni əlavə
 
-  const ScoreScreen({super.key, required this.score, required this.total, required this.bankName});
+  const ScoreScreen({
+    super.key,
+    required this.score,
+    required this.total,
+    required this.bankName,
+    required this.questions, // Constructor-a əlavə edildi
+    required this.userAnswers, // Constructor-a əlavə edildi
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -38,9 +49,14 @@ class ScoreScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(bankName, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+              Text(bankName, 
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 24),
               Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 24),
                   child: Stack(
@@ -52,22 +68,67 @@ class ScoreScreen extends StatelessWidget {
                         child: CircularProgressIndicator(
                           value: score / total,
                           strokeWidth: 12,
+                          strokeCap: StrokeCap.round,
                           backgroundColor: scheme.surfaceContainerHighest,
                           color: percentage >= 50 ? Colors.green : scheme.error,
                         ),
                       ),
-                      Text('${percentage.toInt()}%', style: const TextStyle(fontSize: 34, fontWeight: FontWeight.bold)),
+                      Text('${percentage.toInt()}%', 
+                        style: const TextStyle(fontSize: 34, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-              Text('Düzgün cavab: $score', style: const TextStyle(fontSize: 18, color: Colors.green, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text('Səhv cavab: ${total - score}', style: TextStyle(fontSize: 18, color: scheme.error, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 36),
-              FilledButton.tonalIcon(
+              const SizedBox(height: 32),
+              
+              // Statistikalar
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _ResultStat(
+                    label: "Düzgün",
+                    value: score.toString(),
+                    color: Colors.green,
+                  ),
+                  _ResultStat(
+                    label: "Səhv",
+                    value: (total - score).toString(),
+                    color: scheme.error,
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 48),
+
+              // Düymələr
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ReviewScreen(
+                        questions: questions,
+                        userAnswers: userAnswers,
+                      ),
+                    ),
+                  );
+                },
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 56),
+                  backgroundColor: scheme.secondaryContainer,
+                  foregroundColor: scheme.onSecondaryContainer,
+                ),
+                icon: const Icon(Icons.fact_check_rounded),
+                label: const Text('Sualları Təkrar Nəzərdən Keçir'),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              OutlinedButton.icon(
                 onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 56),
+                ),
                 icon: const Icon(Icons.home_rounded),
                 label: const Text('Ana Menyuya Qayıt'),
               ),
@@ -75,6 +136,25 @@ class ScoreScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// Kiçik statistika vidceti
+class _ResultStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _ResultStat({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
+        Text(label, style: TextStyle(color: color.withOpacity(0.8), fontWeight: FontWeight.w500)),
+      ],
     );
   }
 }

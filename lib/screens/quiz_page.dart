@@ -18,8 +18,9 @@ class QuizPage extends StatefulWidget {
 }
 
 class _QuizPageState extends State<QuizPage> {
-  Map<int, int> _userAnswers = {}; // Sualın İndeksi : Seçilmiş Variantın İndeksi
+  Map<int, int> _userAnswers = {}; 
   List<Question> _questions = [];
+  Set<int> _bookmarkedIndices = {}; // Ulduzlanmış suallar
   int _currentIndex = 0;
   bool _isAnswered = false;
   int? _selectedOption;
@@ -31,9 +32,9 @@ class _QuizPageState extends State<QuizPage> {
     _initQuiz();
   }
 
-  /// Quiz-i başladır: Sualları yükləyir və yaddaşı yoxlayır
   Future<void> _initQuiz() async {
     await _loadQuestions();
+    await _loadBookmarks(); // Bookmarkları yüklə
     if (!mounted) return;
 
     if (_questions.isEmpty) {
@@ -52,27 +53,99 @@ class _QuizPageState extends State<QuizPage> {
     }
   }
 
-  /// Sualları və variantları qarışdıran əsas funksiya
+  // --- Bookmark Məntiqi ---
+  Future<void> _loadBookmarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList('bookmarks_${widget.bankName}') ?? [];
+    setState(() {
+      _bookmarkedIndices = list.map((e) => int.parse(e)).toSet();
+    });
+  }
+
+  Future<void> _toggleBookmark() async {
+    setState(() {
+      if (_bookmarkedIndices.contains(_currentIndex)) {
+        _bookmarkedIndices.remove(_currentIndex);
+      } else {
+        _bookmarkedIndices.add(_currentIndex);
+      }
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      'bookmarks_${widget.bankName}',
+      _bookmarkedIndices.map((e) => e.toString()).toList(),
+    );
+  }
+
+  // --- Suala sürətli keçid dialoqu ---
+  void _showJumpToDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text("Suala keçid", style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 16),
+            Expanded(
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 5,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                ),
+                itemCount: _questions.length,
+                itemBuilder: (ctx, index) {
+                  bool isCurrent = _currentIndex == index;
+                  bool isAnswered = _userAnswers.containsKey(index);
+                  return InkWell(
+                    onTap: () {
+                      setState(() {
+                        _currentIndex = index;
+                        _updateCurrentState();
+                      });
+                      Navigator.pop(ctx);
+                    },
+                    child: Container(
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: isCurrent ? Colors.blue : (isAnswered ? Colors.green.withOpacity(0.2) : Colors.grey.withOpacity(0.1)),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: isCurrent ? Colors.blue : Colors.grey.shade400),
+                      ),
+                      child: Text("${index + 1}", 
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold, 
+                          color: isCurrent ? Colors.white : Colors.black
+                        )
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _shuffleEverything() {
     setState(() {
-      // 1. Sualların sırasını qarışdır
       _questions.shuffle();
-      
-      // 2. Hər sualın daxilindəki variantları qarışdır və 'correct' indeksini yenilə
       for (final q in _questions) {
         if (q.options.isEmpty) continue;
         final correctAnswerText = q.options[q.correct];
         q.options.shuffle();
         q.correct = q.options.indexOf(correctAnswerText);
       }
-      
       _currentIndex = 0;
       _userAnswers.clear();
       _updateCurrentState();
     });
   }
 
-  /// Cari sualın vəziyyətini (əvvəl cavab verilibmi?) yeniləyir
   void _updateCurrentState() {
     setState(() {
       if (_userAnswers.containsKey(_currentIndex)) {
@@ -85,19 +158,14 @@ class _QuizPageState extends State<QuizPage> {
     });
   }
 
-  /// Variant seçildikdə
   void _answerQuestion(int i) {
     if (_isAnswered) return;
-
     setState(() {
       _isAnswered = true;
       _selectedOption = i;
       _userAnswers[_currentIndex] = i;
     });
-
     _saveProgress();
-
-    // Avtomatik növbəti suala keçid (gecikmə ilə)
     Future.delayed(const Duration(milliseconds: 700), () {
       if (!mounted) return;
       _nextQuestion();
@@ -125,7 +193,6 @@ class _QuizPageState extends State<QuizPage> {
     }
   }
 
-  /// Nəticəni hesablayıb bitirir
   void _calculateFinalScoreAndFinish() {
     var finalScore = 0;
     for (int i = 0; i < _questions.length; i++) {
@@ -144,6 +211,8 @@ class _QuizPageState extends State<QuizPage> {
           score: finalScore,
           total: _questions.length,
           bankName: widget.bankName,
+          questions: _questions,    // Review üçün lazım olacaq
+          userAnswers: _userAnswers, // Review üçün lazım olacaq
         ),
       ),
     );
@@ -157,7 +226,20 @@ class _QuizPageState extends State<QuizPage> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.bankName)),
+      appBar: AppBar(
+        title: Text(widget.bankName),
+        actions: [
+          IconButton(
+            icon: Icon(_bookmarkedIndices.contains(_currentIndex) ? Icons.bookmark : Icons.bookmark_border),
+            color: _bookmarkedIndices.contains(_currentIndex) ? Colors.orange : null,
+            onPressed: _toggleBookmark,
+          ),
+          IconButton(
+            icon: const Icon(Icons.grid_view),
+            onPressed: _showJumpToDialog,
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(
@@ -166,7 +248,6 @@ class _QuizPageState extends State<QuizPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // İndikator və Naviqasiya barı
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -187,8 +268,6 @@ class _QuizPageState extends State<QuizPage> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   const SizedBox(height: 20),
-                  
-                  // Sual Mətni
                   Card(
                     elevation: 0,
                     color: scheme.surfaceContainerLow,
@@ -198,15 +277,11 @@ class _QuizPageState extends State<QuizPage> {
                           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                     ),
                   ),
-
                   if (q.image != null && q.image!.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _QuestionImage(imagePath: q.image!),
                   ],
-
                   const SizedBox(height: 24),
-
-                  // Variantlar Siyahısı
                   ...q.options.asMap().entries.map((e) {
                     bool isCorrect = _isAnswered && e.key == q.correct;
                     bool isWrong = _isAnswered && e.key == _selectedOption && e.key != q.correct;
@@ -250,8 +325,6 @@ class _QuizPageState extends State<QuizPage> {
               ),
             ),
           ),
-          
-          // Alt panel: Növbəti düyməsi
           if (_isAnswered)
             Container(
               padding: const EdgeInsets.all(16),
@@ -271,8 +344,7 @@ class _QuizPageState extends State<QuizPage> {
     );
   }
 
-  // --- Məntiq Hissəsi (Yaddaş və Yükləmə) ---
-
+  // --- Yardımçı Funksiyalar ---
   Future<void> _loadQuestions() async {
     try {
       if (widget.bankData is Map && widget.bankData['questions'] is List) {
@@ -287,9 +359,7 @@ class _QuizPageState extends State<QuizPage> {
           _questions = (data['questions'] as List).map((q) => Question.fromJson(q)).toList();
         }
       }
-    } catch (e) {
-      debugPrint("Sual yükləmə xətası: $e");
-    }
+    } catch (e) { debugPrint("Xəta: $e"); }
     setState(() => _isLoading = false);
   }
 
@@ -301,17 +371,8 @@ class _QuizPageState extends State<QuizPage> {
         title: const Text("Sıralama seçin"),
         content: const Text("Suallar və variantlar qarışıq gəlsin?"),
         actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _shuffleEverything();
-            },
-            child: const Text("Qarışıq"),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Sıralı"),
-          ),
+          TextButton(onPressed: () { Navigator.pop(ctx); _shuffleEverything(); }, child: const Text("Qarışıq")),
+          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text("Sıralı")),
         ],
       ),
     );
@@ -325,26 +386,16 @@ class _QuizPageState extends State<QuizPage> {
         title: const Text("Davam edilsin?"),
         content: const Text("Yarımçıq qalan testiniz var."),
         actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _clearProgress();
-              _showModeSelection();
-            },
-            child: const Text("Sıfırla"),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (answersJson != null) {
-                final Map<String, dynamic> decoded = json.decode(answersJson);
-                _userAnswers = decoded.map((k, v) => MapEntry(int.parse(k), v as int));
-              }
-              _currentIndex = idx;
-              Navigator.pop(ctx);
-              _updateCurrentState();
-            },
-            child: const Text("Davam et"),
-          ),
+          TextButton(onPressed: () { Navigator.pop(ctx); _clearProgress(); _showModeSelection(); }, child: const Text("Sıfırla")),
+          FilledButton(onPressed: () {
+            if (answersJson != null) {
+              final Map<String, dynamic> decoded = json.decode(answersJson);
+              _userAnswers = decoded.map((k, v) => MapEntry(int.parse(k), v as int));
+            }
+            _currentIndex = idx;
+            Navigator.pop(ctx);
+            _updateCurrentState();
+          }, child: const Text("Davam et")),
         ],
       ),
     );
@@ -362,11 +413,7 @@ class _QuizPageState extends State<QuizPage> {
     await prefs.remove('progress_${widget.bankName}');
     await prefs.remove('answers_${widget.bankName}');
     _userAnswers.clear();
-    setState(() {
-      _currentIndex = 0;
-      _isAnswered = false;
-      _selectedOption = null;
-    });
+    setState(() { _currentIndex = 0; _isAnswered = false; _selectedOption = null; });
   }
 
   Future<void> _saveWrong(Question q) async {
@@ -380,11 +427,9 @@ class _QuizPageState extends State<QuizPage> {
   }
 }
 
-/// Sualın şəklini göstərən köməkçi Widget
 class _QuestionImage extends StatelessWidget {
   final String imagePath;
   const _QuestionImage({required this.imagePath});
-
   @override
   Widget build(BuildContext context) {
     final isNetwork = imagePath.startsWith('http');
@@ -393,12 +438,7 @@ class _QuestionImage extends StatelessWidget {
       child: Container(
         color: Theme.of(context).colorScheme.surfaceContainer,
         child: isNetwork 
-          ? CachedNetworkImage(
-              imageUrl: imagePath, 
-              fit: BoxFit.contain,
-              placeholder: (c,u) => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
-              errorWidget: (c,u,e) => const Icon(Icons.broken_image, size: 50),
-            )
+          ? CachedNetworkImage(imageUrl: imagePath, fit: BoxFit.contain, placeholder: (c,u) => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())))
           : Image.file(File(imagePath), fit: BoxFit.contain),
       ),
     );
