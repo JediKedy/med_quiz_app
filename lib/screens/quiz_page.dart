@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/question_model.dart';
-import 'score_screen.dart';
+import '../screens/score_screen.dart';
 
 class QuizPage extends StatefulWidget {
   final String bankName;
@@ -53,13 +53,56 @@ class _QuizPageState extends State<QuizPage> {
     }
   }
 
+  // --- Variantları sessiya üçün bir dəfə qarışdıran funksiya ---
+  void _shuffleOptionsOnce(List<Question> questions) {
+    for (var q in questions) {
+      if (q.options.isEmpty) continue;
+      String correctText = q.options[q.correct]; // Orijinal düzgün cavab mətni
+      q.options.shuffle(); // Variantları qarışdır
+      q.correct = q.options.indexOf(correctText); // Yeni düzgün indeksi tap
+    }
+  }
+
+  Future<void> _loadQuestions() async {
+    try {
+      List<Question> loadedQuestions = [];
+      if (widget.bankData is Map && widget.bankData['questions'] is List) {
+        loadedQuestions = (widget.bankData['questions'] as List)
+            .map((q) => q is Question ? q : Question.fromJson(Map<String, dynamic>.from(q)))
+            .toList();
+      } else if (widget.bankData is String) {
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/${widget.bankData}');
+        if (await file.exists()) {
+          final data = json.decode(await file.readAsString());
+          loadedQuestions = (data['questions'] as List).map((q) => Question.fromJson(q)).toList();
+        }
+      }
+
+      // Sessiya daxilində variantların sabit qalması üçün burada bir dəfə qarışdırırıq
+      _shuffleOptionsOnce(loadedQuestions);
+
+      if (mounted) {
+        setState(() {
+          _questions = loadedQuestions;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Xəta: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   // --- Bookmark Məntiqi ---
   Future<void> _loadBookmarks() async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('bookmarks_${widget.bankName}') ?? [];
-    setState(() {
-      _bookmarkedIndices = list.map((e) => int.parse(e)).toSet();
-    });
+    if (mounted) {
+      setState(() {
+        _bookmarkedIndices = list.map((e) => int.parse(e)).toSet();
+      });
+    }
   }
 
   Future<void> _toggleBookmark() async {
@@ -77,7 +120,6 @@ class _QuizPageState extends State<QuizPage> {
     );
   }
 
-  // --- Suala sürətli keçid dialoqu ---
   void _showJumpToDialog() {
     showModalBottomSheet(
       context: context,
@@ -115,10 +157,7 @@ class _QuizPageState extends State<QuizPage> {
                         border: Border.all(color: isCurrent ? Colors.blue : Colors.grey.shade400),
                       ),
                       child: Text("${index + 1}", 
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold, 
-                          color: isCurrent ? Colors.white : Colors.black
-                        )
+                        style: TextStyle(fontWeight: FontWeight.bold, color: isCurrent ? Colors.white : Colors.black)
                       ),
                     ),
                   );
@@ -133,17 +172,14 @@ class _QuizPageState extends State<QuizPage> {
 
   void _shuffleEverything() {
     setState(() {
+      // Variantlar onsuz da _loadQuestions daxilində qarışdırılıb. 
+      // Burada sadəcə sualların (indekslərin) özünü qarışdırırıq.
       _questions.shuffle();
-      for (final q in _questions) {
-        if (q.options.isEmpty) continue;
-        final correctAnswerText = q.options[q.correct];
-        q.options.shuffle();
-        q.correct = q.options.indexOf(correctAnswerText);
-      }
       _currentIndex = 0;
       _userAnswers.clear();
       _updateCurrentState();
     });
+    _clearProgress();
   }
 
   void _updateCurrentState() {
@@ -230,14 +266,8 @@ class _QuizPageState extends State<QuizPage> {
         title: Text(widget.bankName),
         actions: [
           IconButton(
-            icon: Icon(
-              _bookmarkedIndices.contains(_currentIndex)
-                  ? Icons.bookmark
-                  : Icons.bookmark_border,
-            ),
-            color: _bookmarkedIndices.contains(_currentIndex)
-                ? Colors.orange
-                : null,
+            icon: Icon(_bookmarkedIndices.contains(_currentIndex) ? Icons.bookmark : Icons.bookmark_border),
+            color: _bookmarkedIndices.contains(_currentIndex) ? Colors.orange : null,
             onPressed: _toggleBookmark,
           ),
           IconButton(
@@ -248,127 +278,104 @@ class _QuizPageState extends State<QuizPage> {
       ),
       body: SafeArea(
         child: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Sual ${_currentIndex + 1}/${_questions.length}', 
-                          style: Theme.of(context).textTheme.titleMedium),
-                      if (_currentIndex > 0)
-                        TextButton.icon(
-                          onPressed: _previousQuestion,
-                          icon: const Icon(Icons.arrow_back_ios, size: 14),
-                          label: const Text('Əvvəlki'),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(
-                    value: (_currentIndex + 1) / _questions.length,
-                    minHeight: 8,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  const SizedBox(height: 20),
-                  Card(
-                    elevation: 0,
-                    color: scheme.surfaceContainerLow,
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(q.question, 
-                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Sual ${_currentIndex + 1}/${_questions.length}', style: Theme.of(context).textTheme.titleMedium),
+                        if (_currentIndex > 0)
+                          TextButton.icon(
+                            onPressed: _previousQuestion,
+                            icon: const Icon(Icons.arrow_back_ios, size: 14),
+                            label: const Text('Əvvəlki'),
+                          ),
+                      ],
                     ),
-                  ),
-                  if (q.image != null && q.image!.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _QuestionImage(imagePath: q.image!),
-                  ],
-                  const SizedBox(height: 24),
-                  ...q.options.asMap().entries.map((e) {
-                    bool isCorrect = _isAnswered && e.key == q.correct;
-                    bool isWrong = _isAnswered && e.key == _selectedOption && e.key != q.correct;
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(
+                      value: (_currentIndex + 1) / _questions.length,
+                      minHeight: 8,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    const SizedBox(height: 20),
+                    Card(
+                      elevation: 0,
+                      color: scheme.surfaceContainerLow,
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Text(q.question, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    if (q.image != null && q.image!.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      _QuestionImage(imagePath: q.image!),
+                    ],
+                    const SizedBox(height: 24),
+                    ...q.options.asMap().entries.map((e) {
+                      bool isCorrect = _isAnswered && e.key == q.correct;
+                      bool isWrong = _isAnswered && e.key == _selectedOption && e.key != q.correct;
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: InkWell(
-                        onTap: () => _answerQuestion(e.key),
-                        borderRadius: BorderRadius.circular(12),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: isCorrect ? Colors.green.withOpacity(0.15) : 
-                                   isWrong ? Colors.red.withOpacity(0.15) : scheme.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isCorrect ? Colors.green : 
-                                     isWrong ? Colors.red : scheme.outlineVariant,
-                              width: (isCorrect || isWrong) ? 2 : 1,
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: InkWell(
+                          onTap: () => _answerQuestion(e.key),
+                          borderRadius: BorderRadius.circular(12),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: isCorrect ? Colors.green.withOpacity(0.15) : 
+                                     isWrong ? Colors.red.withOpacity(0.15) : scheme.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isCorrect ? Colors.green : isWrong ? Colors.red : scheme.outlineVariant,
+                                width: (isCorrect || isWrong) ? 2 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 15,
+                                  backgroundColor: isCorrect ? Colors.green : isWrong ? Colors.red : scheme.secondaryContainer,
+                                  child: Text(String.fromCharCode(65 + e.key), 
+                                      style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer)),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(child: Text(e.value)),
+                              ],
                             ),
                           ),
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 15,
-                                backgroundColor: isCorrect ? Colors.green : 
-                                               isWrong ? Colors.red : scheme.secondaryContainer,
-                                child: Text(String.fromCharCode(65 + e.key), 
-                                    style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer)),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(child: Text(e.value)),
-                            ],
-                          ),
                         ),
-                      ),
-                    );
-                  }),
-                ],
+                      );
+                    }),
+                  ],
+                ),
               ),
             ),
-          ),
-          if (_isAnswered)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: scheme.surface,
-                border: Border(top: BorderSide(color: scheme.outlineVariant)),
+            if (_isAnswered)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  border: Border(top: BorderSide(color: scheme.outlineVariant)),
+                ),
+                child: FilledButton.icon(
+                  onPressed: _nextQuestion,
+                  style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
+                  icon: const Icon(Icons.arrow_forward),
+                  label: Text(_currentIndex == _questions.length - 1 ? "Testi Bitir" : "Növbəti Sual"),
+                ),
               ),
-              child: FilledButton.icon(
-                onPressed: _nextQuestion,
-                style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
-                icon: const Icon(Icons.arrow_forward),
-                label: Text(_currentIndex == _questions.length - 1 ? "Testi Bitir" : "Növbəti Sual"),
-              ),
-            ),
-        ],
+          ],
         ),
       ),
     );
-  }
-
-  // --- Yardımçı Funksiyalar ---
-  Future<void> _loadQuestions() async {
-    try {
-      if (widget.bankData is Map && widget.bankData['questions'] is List) {
-        _questions = (widget.bankData['questions'] as List)
-            .map((q) => q is Question ? q : Question.fromJson(Map<String, dynamic>.from(q)))
-            .toList();
-      } else if (widget.bankData is String) {
-        final dir = await getApplicationDocumentsDirectory();
-        final file = File('${dir.path}/${widget.bankData}');
-        if (await file.exists()) {
-          final data = json.decode(await file.readAsString());
-          _questions = (data['questions'] as List).map((q) => Question.fromJson(q)).toList();
-        }
-      }
-    } catch (e) { debugPrint("Xəta: $e"); }
-    setState(() => _isLoading = false);
   }
 
   void _showModeSelection() {
@@ -377,12 +384,11 @@ class _QuizPageState extends State<QuizPage> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text("Sıralama seçin"),
-        content: const Text("Suallar və variantlar qarışıq gəlsin?"),
+        content: const Text("Suallar qarışıq gəlsin? (Variantlar hər iki halda qarışıq olacaq)"),
         actions: [
-          TextButton(onPressed: () { Navigator.pop(ctx); _shuffleEverything(); }, child: const Text("Qarışıq")),
-          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text("Sıralı")),
+          TextButton(onPressed: () { Navigator.pop(ctx); _shuffleEverything(); }, child: const Text("Suallar Qarışıq")),
+          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text("Suallar Sıralı")),
         ],
-        ),
       ),
     );
   }
@@ -406,7 +412,6 @@ class _QuizPageState extends State<QuizPage> {
             _updateCurrentState();
           }, child: const Text("Davam et")),
         ],
-        ),
       ),
     );
   }
@@ -422,8 +427,14 @@ class _QuizPageState extends State<QuizPage> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('progress_${widget.bankName}');
     await prefs.remove('answers_${widget.bankName}');
-    _userAnswers.clear();
-    setState(() { _currentIndex = 0; _isAnswered = false; _selectedOption = null; });
+    if (mounted) {
+      setState(() { 
+        _userAnswers.clear();
+        _currentIndex = 0; 
+        _isAnswered = false; 
+        _selectedOption = null; 
+      });
+    }
   }
 
   Future<void> _saveWrong(Question q) async {
@@ -444,28 +455,11 @@ class _QuestionImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isNetwork = imagePath.startsWith('http://') || imagePath.startsWith('https://');
-    final normalizedPath = imagePath.startsWith('file://')
-        ? Uri.parse(imagePath).toFilePath()
-        : imagePath;
+    const String baseUrl = "https://raw.githubusercontent.com/JediKedy/med_quiz_app_questions/refs/heads/main/";
 
-    Widget errorWidget() {
-      return Container(
-        height: 180,
-        alignment: Alignment.center,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.broken_image_outlined, color: scheme.error),
-            const SizedBox(height: 8),
-            Text(
-              'Şəkil yüklənmədi',
-              style: TextStyle(color: scheme.onSurfaceVariant),
-            ),
-          ],
-        ),
-      );
+    String finalImageUrl = imagePath;
+    if (!imagePath.startsWith('http')) {
+      finalImageUrl = baseUrl + imagePath.replaceAll(" ", "%20");
     }
 
     return ClipRRect(
@@ -473,22 +467,23 @@ class _QuestionImage extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(minHeight: 160, maxHeight: 300),
         width: double.infinity,
-        color: scheme.surfaceContainer,
-        child: isNetwork
-            ? CachedNetworkImage(
-                imageUrl: imagePath,
-                fit: BoxFit.contain,
-                placeholder: (context, url) => const SizedBox(
-                  height: 180,
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-                errorWidget: (context, url, error) => errorWidget(),
-              )
-            : Image.file(
-                File(normalizedPath),
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => errorWidget(),
-              ),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainer,
+          border: Border.all(color: scheme.outlineVariant.withOpacity(0.5)),
+        ),
+        child: CachedNetworkImage(
+          imageUrl: finalImageUrl,
+          fit: BoxFit.contain,
+          placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+          errorWidget: (context, url, error) => Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.broken_image_rounded, color: scheme.error, size: 40),
+              const SizedBox(height: 8),
+              const Text("Şəkil yüklənə bilmədi", style: TextStyle(fontSize: 12)),
+            ],
+          ),
+        ),
       ),
     );
   }

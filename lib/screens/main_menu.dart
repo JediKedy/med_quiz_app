@@ -13,7 +13,7 @@ class MainMenu extends StatefulWidget {
   final Map<String, dynamic>? data;
   final String title;
 
-  const MainMenu({super.key, this.data, this.title = 'Ana Menyu'});
+  const MainMenu({super.key, this.data, this.title = 'Ana menyu'});
 
   @override
   State<MainMenu> createState() => _MainMenuState();

@@ -77,7 +77,7 @@ class _SplashScreenState extends State<SplashScreen>
             ),
             const SizedBox(height: 30),
             Text(
-              'MED QUIZ',
+              'Rezidentura Quiz App',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: scheme.onPrimary,
