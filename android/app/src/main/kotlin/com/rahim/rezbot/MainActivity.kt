@@ -1,4 +1,4 @@
-package com.example.med_quiz_app
+package com.rahim.rezbot
 
 import io.flutter.embedding.android.FlutterActivity
 
