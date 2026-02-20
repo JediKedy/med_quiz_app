@@ -18,7 +18,7 @@ class QuizPage extends StatefulWidget {
 }
 
 class _QuizPageState extends State<QuizPage> {
-  Map<int, int> _userAnswers = {};
+  final Map<int, int> _userAnswers = {};
   List<Question> _questions = [];
   Set<int> _bookmarkedIndices = {};
   int _currentIndex = 0;
@@ -53,13 +53,12 @@ class _QuizPageState extends State<QuizPage> {
     }
   }
 
-  // --- Variantları sessiya üçün bir dəfə qarışdıran funksiya ---
   void _shuffleOptionsOnce(List<Question> questions) {
-    for (var q in questions) {
+    for (final q in questions) {
       if (q.options.isEmpty) continue;
-      String correctText = q.options[q.correct]; // Orijinal düzgün cavab mətni
-      q.options.shuffle(); // Variantları qarışdır
-      q.correct = q.options.indexOf(correctText); // Yeni düzgün indeksi tap
+      final correctText = q.options[q.correct];
+      q.options.shuffle();
+      q.correct = q.options.indexOf(correctText);
     }
   }
 
@@ -75,34 +74,31 @@ class _QuizPageState extends State<QuizPage> {
         final file = File('${dir.path}/${widget.bankData}');
         if (await file.exists()) {
           final data = json.decode(await file.readAsString());
-          loadedQuestions = (data['questions'] as List).map((q) => Question.fromJson(q)).toList();
+          loadedQuestions =
+              (data['questions'] as List).map((q) => Question.fromJson(q)).toList();
         }
       }
 
-      // Sessiya daxilində variantların sabit qalması üçün burada bir dəfə qarışdırırıq
       _shuffleOptionsOnce(loadedQuestions);
 
-      if (mounted) {
-        setState(() {
-          _questions = loadedQuestions;
-          _isLoading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _questions = loadedQuestions;
+        _isLoading = false;
+      });
     } catch (e) {
-      debugPrint("Xəta: $e");
+      debugPrint('Xəta: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // --- Bookmark Məntiqi ---
   Future<void> _loadBookmarks() async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('bookmarks_${widget.bankName}') ?? [];
-    if (mounted) {
-      setState(() {
-        _bookmarkedIndices = list.map((e) => int.parse(e)).toSet();
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _bookmarkedIndices = list.map((e) => int.parse(e)).toSet();
+    });
   }
 
   Future<void> _toggleBookmark() async {
@@ -113,6 +109,7 @@ class _QuizPageState extends State<QuizPage> {
         _bookmarkedIndices.add(_currentIndex);
       }
     });
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
       'bookmarks_${widget.bankName}',
@@ -121,26 +118,48 @@ class _QuizPageState extends State<QuizPage> {
   }
 
   void _showJumpToDialog() {
+    final scheme = Theme.of(context).colorScheme;
+
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(16),
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
         child: Column(
           children: [
-            Text("Suala keçid", style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
+            Text('Suala keçid', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
             Expanded(
               child: GridView.builder(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 5,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
                 ),
                 itemCount: _questions.length,
                 itemBuilder: (ctx, index) {
-                  bool isCurrent = _currentIndex == index;
-                  bool isAnswered = _userAnswers.containsKey(index);
+                  final isCurrent = _currentIndex == index;
+                  final isAnswered = _userAnswers.containsKey(index);
+                  final isCorrect = isAnswered && _userAnswers[index] == _questions[index].correct;
+
+                  Color tileColor = scheme.surfaceContainerHighest;
+                  Color borderColor = scheme.outlineVariant;
+                  Color textColor = scheme.onSurface;
+
+                  if (isCurrent) {
+                    tileColor = scheme.primary;
+                    borderColor = scheme.primary;
+                    textColor = scheme.onPrimary;
+                  } else if (isAnswered) {
+                    tileColor = isCorrect
+                        ? Colors.green.withOpacity(0.15)
+                        : scheme.errorContainer.withOpacity(0.6);
+                    borderColor = isCorrect ? Colors.green : scheme.error;
+                  }
+
                   return InkWell(
                     onTap: () {
                       setState(() {
@@ -149,15 +168,18 @@ class _QuizPageState extends State<QuizPage> {
                       });
                       Navigator.pop(ctx);
                     },
-                    child: Container(
+                    borderRadius: BorderRadius.circular(12),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: isCurrent ? Colors.blue : (isAnswered ? Colors.green.withOpacity(0.2) : Colors.grey.withOpacity(0.1)),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: isCurrent ? Colors.blue : Colors.grey.shade400),
+                        color: tileColor,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: borderColor),
                       ),
-                      child: Text("${index + 1}", 
-                        style: TextStyle(fontWeight: FontWeight.bold, color: isCurrent ? Colors.white : Colors.black)
+                      child: Text(
+                        '${index + 1}',
+                        style: TextStyle(fontWeight: FontWeight.w700, color: textColor),
                       ),
                     ),
                   );
@@ -172,37 +194,31 @@ class _QuizPageState extends State<QuizPage> {
 
   void _shuffleEverything() {
     setState(() {
-      // Variantlar onsuz da _loadQuestions daxilində qarışdırılıb. 
-      // Burada sadəcə sualların (indekslərin) özünü qarışdırırıq.
       _questions.shuffle();
       _currentIndex = 0;
       _userAnswers.clear();
       _updateCurrentState();
     });
-    _clearProgress();
+    _clearProgress(updateState: false);
   }
 
   void _updateCurrentState() {
-    setState(() {
-      if (_userAnswers.containsKey(_currentIndex)) {
-        _isAnswered = true;
-        _selectedOption = _userAnswers[_currentIndex];
-      } else {
-        _isAnswered = false;
-        _selectedOption = null;
-      }
-    });
+    final selected = _userAnswers[_currentIndex];
+    _isAnswered = selected != null;
+    _selectedOption = selected;
   }
 
   void _answerQuestion(int i) {
     if (_isAnswered) return;
+
     setState(() {
       _isAnswered = true;
       _selectedOption = i;
       _userAnswers[_currentIndex] = i;
     });
+
     _saveProgress();
-    Future.delayed(const Duration(milliseconds: 700), () {
+    Future.delayed(const Duration(milliseconds: 500), () {
       if (!mounted) return;
       _nextQuestion();
     });
@@ -230,16 +246,18 @@ class _QuizPageState extends State<QuizPage> {
   }
 
   void _calculateFinalScoreAndFinish() {
+    final answersSnapshot = Map<int, int>.from(_userAnswers);
     var finalScore = 0;
-    for (int i = 0; i < _questions.length; i++) {
-      if (_userAnswers[i] == _questions[i].correct) {
+
+    for (var i = 0; i < _questions.length; i++) {
+      if (answersSnapshot[i] == _questions[i].correct) {
         finalScore++;
-      } else if (_userAnswers.containsKey(i)) {
+      } else if (answersSnapshot.containsKey(i)) {
         _saveWrong(_questions[i]);
       }
     }
 
-    _clearProgress();
+    _clearProgress(updateState: false);
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -248,7 +266,7 @@ class _QuizPageState extends State<QuizPage> {
           total: _questions.length,
           bankName: widget.bankName,
           questions: _questions,
-          userAnswers: _userAnswers,
+          userAnswers: answersSnapshot,
         ),
       ),
     );
@@ -256,7 +274,9 @@ class _QuizPageState extends State<QuizPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     final q = _questions[_currentIndex];
     final scheme = Theme.of(context).colorScheme;
@@ -266,95 +286,123 @@ class _QuizPageState extends State<QuizPage> {
         title: Text(widget.bankName),
         actions: [
           IconButton(
-            icon: Icon(_bookmarkedIndices.contains(_currentIndex) ? Icons.bookmark : Icons.bookmark_border),
+            icon: Icon(
+              _bookmarkedIndices.contains(_currentIndex)
+                  ? Icons.bookmark_rounded
+                  : Icons.bookmark_border_rounded,
+            ),
             color: _bookmarkedIndices.contains(_currentIndex) ? Colors.orange : null,
             onPressed: _toggleBookmark,
           ),
-          IconButton(
-            icon: const Icon(Icons.grid_view),
-            onPressed: _showJumpToDialog,
-          ),
+          IconButton(icon: const Icon(Icons.grid_view_rounded), onPressed: _showJumpToDialog),
         ],
       ),
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Sual ${_currentIndex + 1}/${_questions.length}', style: Theme.of(context).textTheme.titleMedium),
-                        if (_currentIndex > 0)
-                          TextButton.icon(
-                            onPressed: _previousQuestion,
-                            icon: const Icon(Icons.arrow_back_ios, size: 14),
-                            label: const Text('Əvvəlki'),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                child: SingleChildScrollView(
+                  key: ValueKey(_currentIndex),
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Sual ${_currentIndex + 1}/${_questions.length}',
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    LinearProgressIndicator(
-                      value: (_currentIndex + 1) / _questions.length,
-                      minHeight: 8,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    const SizedBox(height: 20),
-                    Card(
-                      elevation: 0,
-                      color: scheme.surfaceContainerLow,
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Text(q.question, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                          if (_currentIndex > 0)
+                            TextButton.icon(
+                              onPressed: _previousQuestion,
+                              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 14),
+                              label: const Text('Əvvəlki'),
+                            ),
+                        ],
                       ),
-                    ),
-                    if (q.image != null && q.image!.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      _QuestionImage(imagePath: q.image!),
-                    ],
-                    const SizedBox(height: 24),
-                    ...q.options.asMap().entries.map((e) {
-                      bool isCorrect = _isAnswered && e.key == q.correct;
-                      bool isWrong = _isAnswered && e.key == _selectedOption && e.key != q.correct;
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: InkWell(
-                          onTap: () => _answerQuestion(e.key),
-                          borderRadius: BorderRadius.circular(12),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 250),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: isCorrect ? Colors.green.withOpacity(0.15) : 
-                                     isWrong ? Colors.red.withOpacity(0.15) : scheme.surface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isCorrect ? Colors.green : isWrong ? Colors.red : scheme.outlineVariant,
-                                width: (isCorrect || isWrong) ? 2 : 1,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 15,
-                                  backgroundColor: isCorrect ? Colors.green : isWrong ? Colors.red : scheme.secondaryContainer,
-                                  child: Text(String.fromCharCode(65 + e.key), 
-                                      style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer)),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(child: Text(e.value)),
-                              ],
-                            ),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        value: (_currentIndex + 1) / _questions.length,
+                        minHeight: 9,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      const SizedBox(height: 20),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            q.question,
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                         ),
-                      );
-                    }),
-                  ],
+                      ),
+                      if (q.image != null && q.image!.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        _QuestionImage(imagePath: q.image!),
+                      ],
+                      const SizedBox(height: 24),
+                      ...q.options.asMap().entries.map((e) {
+                        final isCorrect = _isAnswered && e.key == q.correct;
+                        final isWrong =
+                            _isAnswered && e.key == _selectedOption && e.key != q.correct;
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: InkWell(
+                            onTap: () => _answerQuestion(e.key),
+                            borderRadius: BorderRadius.circular(16),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 230),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isCorrect
+                                    ? Colors.green.withOpacity(0.12)
+                                    : isWrong
+                                        ? scheme.errorContainer.withOpacity(0.55)
+                                        : scheme.surface,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isCorrect
+                                      ? Colors.green
+                                      : isWrong
+                                          ? scheme.error
+                                          : scheme.outlineVariant,
+                                  width: (isCorrect || isWrong) ? 2 : 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 15,
+                                    backgroundColor: isCorrect
+                                        ? Colors.green
+                                        : isWrong
+                                            ? scheme.error
+                                            : scheme.secondaryContainer,
+                                    child: Text(
+                                      String.fromCharCode(65 + e.key),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: (isCorrect || isWrong)
+                                            ? Colors.white
+                                            : scheme.onSecondaryContainer,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: Text(e.value)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -368,8 +416,10 @@ class _QuizPageState extends State<QuizPage> {
                 child: FilledButton.icon(
                   onPressed: _nextQuestion,
                   style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
-                  icon: const Icon(Icons.arrow_forward),
-                  label: Text(_currentIndex == _questions.length - 1 ? "Testi Bitir" : "Növbəti Sual"),
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: Text(_currentIndex == _questions.length - 1
+                      ? 'Testi Bitir'
+                      : 'Növbəti Sual'),
                 ),
               ),
           ],
@@ -383,11 +433,21 @@ class _QuizPageState extends State<QuizPage> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text("Sıralama seçin"),
-        content: const Text("Suallar qarışıq gəlsin? (Variantlar hər iki halda qarışıq olacaq)"),
+        title: const Text('Sıralama seçin'),
+        content:
+            const Text('Suallar qarışıq gəlsin? (Variantlar hər iki halda qarışıq olacaq)'),
         actions: [
-          TextButton(onPressed: () { Navigator.pop(ctx); _shuffleEverything(); }, child: const Text("Suallar Qarışıq")),
-          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text("Suallar Sıralı")),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _shuffleEverything();
+            },
+            child: const Text('Suallar Qarışıq'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Suallar Sıralı'),
+          ),
         ],
       ),
     );
@@ -398,19 +458,32 @@ class _QuizPageState extends State<QuizPage> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text("Davam edilsin?"),
-        content: const Text("Yarımçıq qalan testiniz var."),
+        title: const Text('Davam edilsin?'),
+        content: const Text('Yarımçıq qalan testiniz var.'),
         actions: [
-          TextButton(onPressed: () { Navigator.pop(ctx); _clearProgress(); _showModeSelection(); }, child: const Text("Sıfırla")),
-          FilledButton(onPressed: () {
-            if (answersJson != null) {
-              final Map<String, dynamic> decoded = json.decode(answersJson);
-              _userAnswers = decoded.map((k, v) => MapEntry(int.parse(k), v as int));
-            }
-            _currentIndex = idx;
-            Navigator.pop(ctx);
-            _updateCurrentState();
-          }, child: const Text("Davam et")),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _clearProgress();
+              _showModeSelection();
+            },
+            child: const Text('Sıfırla'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (answersJson != null) {
+                final Map<String, dynamic> decoded = json.decode(answersJson);
+                _userAnswers
+                  ..clear()
+                  ..addAll(decoded.map((k, v) => MapEntry(int.parse(k), v as int)));
+              }
+              _currentIndex = idx.clamp(0, _questions.length - 1);
+              Navigator.pop(ctx);
+              if (!mounted) return;
+              setState(_updateCurrentState);
+            },
+            child: const Text('Davam et'),
+          ),
         ],
       ),
     );
@@ -419,20 +492,21 @@ class _QuizPageState extends State<QuizPage> {
   Future<void> _saveProgress() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('progress_${widget.bankName}', _currentIndex);
-    String answersJson = json.encode(_userAnswers.map((k, v) => MapEntry(k.toString(), v)));
+    final answersJson = json.encode(_userAnswers.map((k, v) => MapEntry(k.toString(), v)));
     await prefs.setString('answers_${widget.bankName}', answersJson);
   }
 
-  Future<void> _clearProgress() async {
+  Future<void> _clearProgress({bool updateState = true}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('progress_${widget.bankName}');
     await prefs.remove('answers_${widget.bankName}');
-    if (mounted) {
-      setState(() { 
+
+    if (mounted && updateState) {
+      setState(() {
         _userAnswers.clear();
-        _currentIndex = 0; 
-        _isAnswered = false; 
-        _selectedOption = null; 
+        _currentIndex = 0;
+        _isAnswered = false;
+        _selectedOption = null;
       });
     }
   }
@@ -450,16 +524,18 @@ class _QuizPageState extends State<QuizPage> {
 
 class _QuestionImage extends StatelessWidget {
   final String imagePath;
+
   const _QuestionImage({required this.imagePath});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    const String baseUrl = "https://raw.githubusercontent.com/JediKedy/med_quiz_app_questions/refs/heads/main/";
+    const baseUrl =
+        'https://raw.githubusercontent.com/JediKedy/med_quiz_app_questions/refs/heads/main/';
 
-    String finalImageUrl = imagePath;
+    var finalImageUrl = imagePath;
     if (!imagePath.startsWith('http')) {
-      finalImageUrl = baseUrl + imagePath.replaceAll(" ", "%20");
+      finalImageUrl = baseUrl + imagePath.replaceAll(' ', '%20');
     }
 
     return ClipRRect(
@@ -480,7 +556,7 @@ class _QuestionImage extends StatelessWidget {
             children: [
               Icon(Icons.broken_image_rounded, color: scheme.error, size: 40),
               const SizedBox(height: 8),
-              const Text("Şəkil yüklənə bilmədi", style: TextStyle(fontSize: 12)),
+              const Text('Şəkil yüklənə bilmədi', style: TextStyle(fontSize: 12)),
             ],
           ),
         ),
